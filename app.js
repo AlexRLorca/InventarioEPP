@@ -68,12 +68,22 @@ const messageContainer = document.getElementById('messageContainer');
 
 // --- Autenticación y Setup de Firestore ---
 function setupFirebase() {
-    // La línea "enableIndexedDbPersistence(db)" se movió a firebase-config.js, por lo que se elimina de aquí.
+    console.log("🔧 Iniciando setupFirebase...");
+    console.log("📋 ADMIN_UID:", ADMIN_UID);
+    console.log("📋 appIdForPath:", appIdForPath);
 
     if (ADMIN_UID && ADMIN_UID !== "PEGAR_AQUI_EL_UID_DEL_ADMINISTRADOR") {
-        eppInventoryCollectionRef = collection(db, artifacts/${appIdForPath}/users/${ADMIN_UID}/epp_inventory);
-        eppLoansCollectionRef = collection(db, artifacts/${appIdForPath}/users/${ADMIN_UID}/epp_loans);
+        // ✅ CORRECCIÓN: Agregado backticks para template literals
+        const inventoryPath = `artifacts/${appIdForPath}/users/${ADMIN_UID}/epp_inventory`;
+        const loansPath = `artifacts/${appIdForPath}/users/${ADMIN_UID}/epp_loans`;
+        
+        console.log("📂 Ruta inventario:", inventoryPath);
+        console.log("📂 Ruta préstamos:", loansPath);
+        
+        eppInventoryCollectionRef = collection(db, inventoryPath);
+        eppLoansCollectionRef = collection(db, loansPath);
     } else {
+        console.error("❌ ADMIN_UID no configurado correctamente");
         errorMessage.textContent = "Error Crítico de Configuración: La constante ADMIN_UID no ha sido establecida en firebase-config.js. Por favor, edita el archivo y define tu User ID de Firebase. La aplicación no funcionará correctamente.";
         errorMessage.classList.remove('hidden');
         loadingIndicator.classList.add('hidden');
@@ -81,14 +91,17 @@ function setupFirebase() {
     }
 
     onAuthStateChanged(auth, (user) => {
+        console.log("🔐 Estado de autenticación cambió:", user ? "Autenticado" : "No autenticado");
         currentLoggedInUser = user;
         const isAdmin = user && user.uid === ADMIN_UID;
+        console.log("👑 Es admin?", isAdmin);
         adjustAdminColumnsVisibility(isAdmin); 
 
         if (user) {
-            userIdDisplay.textContent = Logueado como: ${user.email};
+            userIdDisplay.textContent = `Logueado como: ${user.email}`;
             authStatus.textContent = "Autenticado.";
-            authStatus.classList.remove('text-red-500'); authStatus.classList.add('text-green-500');
+            authStatus.classList.remove('text-red-500'); 
+            authStatus.classList.add('text-green-500');
             loginSection.classList.add('hidden');
             logoutButton.classList.remove('hidden');
             
@@ -104,13 +117,23 @@ function setupFirebase() {
         } else {
             userIdDisplay.textContent = "Visitante";
             authStatus.textContent = "No autenticado.";
-            authStatus.classList.add('text-red-500'); authStatus.classList.remove('text-green-500');
+            authStatus.classList.add('text-red-500'); 
+            authStatus.classList.remove('text-green-500');
             loginSection.classList.remove('hidden');
             logoutButton.classList.add('hidden');
             addEppFormSection.classList.add('hidden');
             loansSection.classList.add('hidden'); 
         }
-        loadInventory(); // Cargar inventario siempre, la vista se ajusta dentro
+        
+        // ✅ CORRECCIÓN: Agregar try-catch para capturar errores
+        try {
+            loadInventory(); // Cargar inventario siempre, la vista se ajusta dentro
+        } catch (error) {
+            console.error("❌ Error al cargar inventario:", error);
+            errorMessage.textContent = `Error al cargar inventario: ${error.message}`;
+            errorMessage.classList.remove('hidden');
+        }
+        
         mainContent.classList.remove('hidden');
         loadingIndicator.classList.add('hidden');
     });
@@ -125,43 +148,53 @@ function setupFirebase() {
 // --- Manejo de Login/Logout ---
 loginForm.addEventListener('submit', async (e) => {
     e.preventDefault();
+    console.log("🔑 Intentando login...");
     loginError.classList.add('hidden');
     const email = emailInput.value;
     const password = passwordInput.value;
     try {
         await signInWithEmailAndPassword(auth, email, password);
         loginForm.reset();
+        console.log("✅ Login exitoso");
     } catch (error) {
-        console.error("Error de inicio de sesión:", error);
-        loginError.textContent = Error: ${mapAuthError(error.code)};
+        console.error("❌ Error de inicio de sesión:", error);
+        loginError.textContent = `Error: ${mapAuthError(error.code)}`;
         loginError.classList.remove('hidden');
     }
 });
 
 logoutButton.addEventListener('click', async () => {
-    try { await signOut(auth); } catch (error) {
-        console.error("Error al cerrar sesión:", error);
-        showTemporaryMessage(Error al cerrar sesión: ${error.message}, "error");
+    try { 
+        await signOut(auth); 
+        console.log("🚪 Logout exitoso");
+    } catch (error) {
+        console.error("❌ Error al cerrar sesión:", error);
+        showTemporaryMessage(`Error al cerrar sesión: ${error.message}`, "error");
     }
 });
 
 function mapAuthError(errorCode) {
     switch (errorCode) {
         case 'auth/invalid-email': return 'Formato de correo inválido.';
-        case 'auth/user-not-found': case 'auth/wrong-password': case 'auth/invalid-credential': return 'Correo o contraseña incorrectos.';
+        case 'auth/user-not-found': 
+        case 'auth/wrong-password': 
+        case 'auth/invalid-credential': return 'Correo o contraseña incorrectos.';
         default: return 'Error al intentar iniciar sesión.';
     }
 }
 
 // --- Lógica del Inventario EPP ---
 function loadInventory() {
+    console.log("📦 Cargando inventario...");
+    
     if (ADMIN_UID === "PEGAR_AQUI_EL_UID_DEL_ADMINISTRADOR" || !eppInventoryCollectionRef) {
+        console.warn("⚠️ No se puede cargar inventario - configuración pendiente");
         if (!eppInventoryCollectionRef && ADMIN_UID !== "PEGAR_AQUI_EL_UID_DEL_ADMINISTRADOR") { 
              errorMessage.textContent = "Error: No se pudo conectar a la base de datos del inventario.";
              errorMessage.classList.remove('hidden');
         }
         const isAdminForColspan = currentLoggedInUser && currentLoggedInUser.uid === ADMIN_UID;
-        eppTableBody.innerHTML = <tr><td colspan="${isAdminForColspan ? 7 : 5}" class="text-center py-4 px-6 text-gray-500">Inventario no disponible (configuración pendiente o error de conexión).</td></tr>;
+        eppTableBody.innerHTML = `<tr><td colspan="${isAdminForColspan ? 7 : 5}" class="text-center py-4 px-6 text-gray-500">Inventario no disponible (configuración pendiente o error de conexión).</td></tr>`;
         loadingIndicator.classList.add('hidden');
         return;
     }
@@ -169,7 +202,10 @@ function loadInventory() {
     loadingIndicator.classList.remove('hidden');
     const q = query(eppInventoryCollectionRef); 
 
+    console.log("👂 Configurando listener para inventario...");
+    
     onSnapshot(q, (snapshot) => {
+        console.log("📊 Datos de inventario recibidos:", snapshot.size, "documentos");
         allEppItems = [];
         snapshot.forEach(doc => {
             allEppItems.push({ id: doc.id, ...doc.data() });
@@ -184,8 +220,21 @@ function loadInventory() {
             errorMessage.classList.add('hidden');
         }
     }, (error) => {
-        console.error("Error al cargar inventario EPP: ", error);
-        errorMessage.textContent = Error al cargar inventario EPP: ${error.message}.;
+        console.error("❌ Error al cargar inventario EPP: ", error);
+        console.error("❌ Código de error:", error.code);
+        console.error("❌ Mensaje de error:", error.message);
+        
+        // Mostrar mensaje de error más específico
+        let errorMsg = "Error al cargar inventario EPP";
+        if (error.code === 'permission-denied') {
+            errorMsg += ": Sin permisos para acceder a la base de datos. Verifica las reglas de Firestore.";
+        } else if (error.code === 'unavailable') {
+            errorMsg += ": Base de datos no disponible. Verifica tu conexión a internet.";
+        } else {
+            errorMsg += `: ${error.message}`;
+        }
+        
+        errorMessage.textContent = errorMsg;
         errorMessage.classList.remove('hidden');
         loadingIndicator.classList.add('hidden');
     });
@@ -208,14 +257,14 @@ function displayFilteredInventory(isAdminView) {
     const colCount = isAdminView ? 7 : 5; 
     if (filteredItems.length === 0) {
         const message = searchTerm ? "No hay EPP que coincidan con la búsqueda." : "No hay EPP registrados.";
-        eppTableBody.innerHTML = <tr><td colspan="${colCount}" class="text-center py-4 px-6 text-gray-500">${message}</td></tr>;
+        eppTableBody.innerHTML = `<tr><td colspan="${colCount}" class="text-center py-4 px-6 text-gray-500">${message}</td></tr>`;
     } else {
         filteredItems.forEach(item => {
             renderEppItem(item, isAdminView);
             if (isAdminView) { 
                 const option = document.createElement('option');
                 option.value = item.id;
-                option.textContent = ${item.name || 'Nombre Desconocido'} (Talla: ${item.size || 'N/A'}) - Stock: ${item.quantity !== undefined ? item.quantity : 'N/A'};
+                option.textContent = `${item.name || 'Nombre Desconocido'} (Talla: ${item.size || 'N/A'}) - Stock: ${item.quantity !== undefined ? item.quantity : 'N/A'}`;
                 option.dataset.stock = item.quantity; 
                 option.dataset.name = item.name;
                 option.dataset.size = item.size || 'N/A';
@@ -234,10 +283,10 @@ function renderEppItem(item, isAdminView) {
     }`;
 
     const stockStatus = item.quantity <= item.minStock 
-        ? <span class="font-semibold text-red-600 dark:text-red-400">BAJO STOCK</span>
+        ? `<span class="font-semibold text-red-600 dark:text-red-400">BAJO STOCK</span>`
         : (item.quantity <= item.minStock + (item.minStock * 0.2) 
-            ? <span class="font-semibold text-yellow-600 dark:text-yellow-400">PRÓXIMO A MÍNIMO</span>
-            : <span class="font-semibold text-green-600 dark:text-green-400">OK</span>);
+            ? `<span class="font-semibold text-yellow-600 dark:text-yellow-400">PRÓXIMO A MÍNIMO</span>`
+            : `<span class="font-semibold text-green-600 dark:text-green-400">OK</span>`);
 
     let adminColumnsHTML = '';
     if (isAdminView) {
@@ -284,7 +333,7 @@ addEppForm.addEventListener('submit', async (e) => {
             showTemporaryMessage("EPP agregado.", "success");
         } catch (error) {
             console.error("Error al agregar EPP: ", error);
-            showTemporaryMessage(Error: ${error.message}, "error");
+            showTemporaryMessage(`Error: ${error.message}`, "error");
         }
     } else {
         showTemporaryMessage("Datos inválidos.", "error");
@@ -311,14 +360,14 @@ eppTableBody.addEventListener('click', async (e) => {
                 if (currentQuantity > 0) await updateDoc(itemRef, { quantity: currentQuantity - 1 });
                 else showTemporaryMessage("Cantidad no puede ser < 0.", "warning");
             } else if (action === 'delete') {
-                showConfirmationModal(¿Eliminar "${itemDoc.data().name}"?, async () => {
+                showConfirmationModal(`¿Eliminar "${itemDoc.data().name}"?`, async () => {
                     await deleteDoc(itemRef);
                     showTemporaryMessage("EPP eliminado.", "success");
                 });
             }
         } catch (error) {
             console.error(`Error en acción ${action}: `, error);
-            showTemporaryMessage(Error: ${error.message}, "error");
+            showTemporaryMessage(`Error: ${error.message}`, "error");
         }
     }
 });
@@ -350,7 +399,7 @@ loanEppForm.addEventListener('submit', async (e) => {
     if (isNaN(quantityToLoan) || quantityToLoan <= 0) { showTemporaryMessage("Validación Préstamo: Cantidad a prestar inválida.", "warning"); return; }
     if (!loanedTo) { showTemporaryMessage("Validación Préstamo: Ingrese a quién se presta.", "warning"); return; }
     if (isNaN(currentStock)) { showTemporaryMessage("Error de Datos Préstamo: Stock actual del EPP no es un número.", "error"); return; }
-    if (quantityToLoan > currentStock) { showTemporaryMessage(Validación Préstamo: Stock insuficiente. Disponible: ${currentStock}, Préstamo: ${quantityToLoan}, "error"); return; }
+    if (quantityToLoan > currentStock) { showTemporaryMessage(`Validación Préstamo: Stock insuficiente. Disponible: ${currentStock}, Préstamo: ${quantityToLoan}`, "error"); return; }
 
     const batch = writeBatch(db);
     const eppItemRef = doc(eppInventoryCollectionRef, eppId);
@@ -370,7 +419,7 @@ loanEppForm.addEventListener('submit', async (e) => {
         showTemporaryMessage("Préstamo registrado y stock actualizado.", "success");
     } catch (error) {
         console.error("Error al registrar préstamo (batch.commit fallido): ", error);
-        showTemporaryMessage(Error al registrar préstamo: ${error.message}. Verifique la consola., "error");
+        showTemporaryMessage(`Error al registrar préstamo: ${error.message}. Verifique la consola.`, "error");
     }
 });
 
@@ -380,7 +429,7 @@ function loadLoans() {
             errorMessage.textContent = "Error de Configuración: No se pudo inicializar la base de datos de préstamos.";
             errorMessage.classList.remove('hidden');
          }
-         loansTableBody.innerHTML = <tr><td colspan="6" class="text-center py-4 px-6 text-gray-500">Préstamos no disponibles (configuración pendiente o error de conexión).</td></tr>;
+         loansTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 px-6 text-gray-500">Préstamos no disponibles (configuración pendiente o error de conexión).</td></tr>`;
          return;
     }
     
@@ -389,7 +438,7 @@ function loadLoans() {
     onSnapshot(q, (snapshot) => {
         loansTableBody.innerHTML = '';
         if (snapshot.empty) {
-            loansTableBody.innerHTML = <tr><td colspan="6" class="text-center py-4 px-6 text-gray-500">No hay préstamos activos.</td></tr>;
+            loansTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 px-6 text-gray-500">No hay préstamos activos.</td></tr>`;
             return;
         }
         snapshot.forEach(loanDoc => {
@@ -397,7 +446,7 @@ function loadLoans() {
         });
     }, (error) => {
         console.error("Error al cargar préstamos: ", error);
-        loansTableBody.innerHTML = <tr><td colspan="6" class="text-center py-4 px-6 text-red-500">Error al cargar préstamos.</td></tr>;
+        loansTableBody.innerHTML = `<tr><td colspan="6" class="text-center py-4 px-6 text-red-500">Error al cargar préstamos.</td></tr>`;
     });
 }
 
@@ -416,7 +465,7 @@ function renderLoanItem(loanId, loanData) {
             ${loanData.returned ? 'Devuelto' : 'Prestado'}
         </td>
         <td class="py-3 px-4 sm:px-6 text-center">
-            ${!loanData.returned ? <button data-id="${loanId}" data-eppid="${loanData.eppId}" data-qty="${loanData.quantityLoaned}" data-action="returnLoan" class="px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-xs sm:text-sm">Marcar Devuelto</button> : ''}
+            ${!loanData.returned ? `<button data-id="${loanId}" data-eppid="${loanData.eppId}" data-qty="${loanData.quantityLoaned}" data-action="returnLoan" class="px-3 py-1.5 bg-blue-500 text-white rounded-md hover:bg-blue-600 text-xs sm:text-sm">Marcar Devuelto</button>` : ''}
         </td>
     `;
     loansTableBody.appendChild(tr);
@@ -456,7 +505,7 @@ loansTableBody.addEventListener('click', async (e) => {
             showTemporaryMessage("Préstamo marcado como devuelto y stock actualizado.", "success");
         } catch (error) {
             console.error("Error al devolver préstamo: ", error);
-            showTemporaryMessage(Error al devolver préstamo: ${error.message}, "error");
+            showTemporaryMessage(`Error al devolver préstamo: ${error.message}`, "error");
         }
     }
 });
@@ -503,4 +552,5 @@ function adjustAdminColumnsVisibility(isAdminView) {
 }
 
 // Inicializar la aplicación
+console.log("🚀 Iniciando aplicación...");
 setupFirebase();
